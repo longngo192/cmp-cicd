@@ -3,7 +3,7 @@ output "rds_endpoint" {
 }
 
 output "frontend_url" {
-  value = "http://${module.cicd.frontend_s3_bucket}.s3-website-us-east-1.amazonaws.com"
+  value = module.cloudfront.cloudfront_domain_name
 }
 
 output "alb_dns_name" {

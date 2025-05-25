@@ -48,10 +48,22 @@ resource "aws_iam_policy" "ec2_policy" {
   })
 }
 
+resource "aws_iam_role_policy_attachment" "rds_readonly_attachment" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonRDSReadOnlyAccess"
+}
+
+
 # Attach the policy to EC2 Role
 resource "aws_iam_role_policy_attachment" "ec2_policy_attach" {
   role       = aws_iam_role.ec2_role.name
   policy_arn = aws_iam_policy.ec2_policy.arn
+}
+
+# Attach the awn managed ssm policy to Ec2 role
+resource "aws_iam_role_policy_attachment" "ec2_ssm_policy_attach" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
 # IAM Instance Profile
@@ -64,6 +76,7 @@ resource "aws_iam_instance_profile" "ec2_profile" {
 resource "aws_security_group" "ec2_sg" {
   vpc_id = var.vpc_id
 
+  # for load balancing access
   ingress {
     from_port       = 5000
     to_port         = 5000
@@ -71,6 +84,7 @@ resource "aws_security_group" "ec2_sg" {
     security_groups = [var.alb_security_group_id]
   }
 
+  # default config, need setting for ssm manager to work
   egress {
     from_port   = 0
     to_port     = 0
@@ -88,41 +102,10 @@ resource "aws_launch_template" "backend_lt" {
   name_prefix   = "${var.project_name}-backend-"
   image_id      = var.ami_id
   instance_type = var.instance_type
-  //key_name      = var.ssh_key_name
   iam_instance_profile {
     name = aws_iam_instance_profile.ec2_profile.name
   }
   vpc_security_group_ids = [aws_security_group.ec2_sg.id]
-
-  user_data = base64encode(<<EOF
-#!/bin/bash
-
-# Update system and install necessary packages
-sudo dnf update -y
-sudo dnf install -y python3-pip git docker
-
-sudo systemctl start docker
-sudo systemctl enable docker
-sudo usermod -aG docker ec2-user
-
-# Set the correct home directory for ec2-user
-cd /home/ec2-user
-
-# Clone the GitHub repository
-sudo git clone https://github.com/RohitManna11/3tier_python_todo_app.git
-
-# Navigate to the backend directory
-cd 3tier_python_todo_app/backend
-
-# Install required Python dependencies
-sudo pip3 install -r requirements.txt
-
-# Build and run the Docker container
-sudo docker build -t todo-backend .
-sudo docker run -d -p 5000:5000 --name todo-backend-container todo-backend
-
-EOF
-  )
 }
 
 # Auto Scaling Group

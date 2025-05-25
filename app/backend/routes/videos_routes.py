@@ -5,13 +5,13 @@ from models.video import Video
 videos_routes = Blueprint("videos_routes", __name__)
 
 # Get all videos
-@videos_routes.route("/videos", methods=["GET"])
+@videos_routes.route("/api/videos", methods=["GET"])
 def get_videos():
     videos = Video.query.all()
     return jsonify([video.to_dict() for video in videos]), 200
 
 # Get task by ID
-@videos_routes.route("/videos/<int:video_id>", methods=["GET"])
+@videos_routes.route("/api/videos/<int:video_id>", methods=["GET"])
 def get_video(video_id):
     video = Video.query.get(video_id)
     if not video:
@@ -19,7 +19,7 @@ def get_video(video_id):
     return jsonify(video.to_dict()), 200
 
 # Create a new task
-@videos_routes.route("/videos", methods=["POST"])
+@videos_routes.route("/api/videos", methods=["POST"])
 def create_video():
     data = request.get_json()
     new_video = Video(title=data["title"], description=data.get("description"), video_url=data["video_url"])
@@ -28,7 +28,7 @@ def create_video():
     return jsonify(new_video.to_dict()), 201
 
 # Update a task
-@videos_routes.route("/videos/<int:video_id>", methods=["PUT"])
+@videos_routes.route("/api/videos/<int:video_id>", methods=["PUT"])
 def update_video(video_id):
     video = Video.query.get(video_id)
     if not video:
@@ -43,7 +43,7 @@ def update_video(video_id):
     return jsonify(video.to_dict()), 200
 
 # Delete a task
-@videos_routes.route("/videos/<int:video_id>", methods=["DELETE"])
+@videos_routes.route("/api/videos/<int:video_id>", methods=["DELETE"])
 def delete_video(video_id):
     video = Video.query.get(video_id)
     if not video:

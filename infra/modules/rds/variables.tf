@@ -15,9 +15,9 @@ variable "ec2_security_group_id" {
   type = string
 }
 
-variable "bastion_security_group_id" {
-  type = string
-}
+# variable "bastion_security_group_id" {
+#   type = string
+# }
 
 variable "instance_class" {
   type    = string

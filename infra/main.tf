@@ -1,6 +1,10 @@
 provider "aws" {
   region = "us-east-1"
 }
+# Create CloudFront Origin Access Identity
+resource "aws_cloudfront_origin_access_identity" "main" {
+  comment = "OAI for S3 bucket access"
+}
 
 # TERRAFORM VPC MODULE
 module "vpc" {
@@ -22,10 +26,10 @@ module "compute" {
   alb_security_group_id = module.load_balancer.alb_security_group_id
   ami_id                = "ami-05b10e08d247fb927"
   instance_type         = "t2.micro"
-  desired_capacity      = 2
-  min_size              = 2
-  max_size              = 4
-  frontend_s3_bucket    = module.cicd.frontend_s3_bucket
+  desired_capacity      = 1
+  min_size              = 1
+  max_size              = 1
+  frontend_s3_bucket    = module.s3_bucket.s3_bucket_name
 }
 
 # LOAD BALANCER MODULE
@@ -40,44 +44,57 @@ module "load_balancer" {
 
 # MONITORING MODULE
 module "monitoring" {
-  source                     = "./modules/monitoring"
-  project_name               = "webapp"
-  alert_email                = "rkmanna11@gmail.com"
-  rds_instance_id            = module.rds.rds_instance_id
-  asg_name                   = module.compute.asg_name
+  source          = "./modules/monitoring"
+  project_name    = "webapp"
+  alert_email     = var.alert_email
+  rds_instance_id = module.rds.rds_instance_id
+  asg_name        = module.compute.asg_name
 }
 
 # RDS MODULE
 module "rds" {
-  source                    = "./modules/rds"
-  project_name              = "webapp"
-  vpc_id                    = module.vpc.vpc_id
-  private_subnets           = module.vpc.private_subnets
-  ec2_security_group_id     = module.compute.backend_ec2_sg_id
-  bastion_security_group_id = module.rds_bastion.bastion_sg_id
-  instance_class            = "db.t3.micro"
-  allocated_storage         = 20
-  max_allocated_storage     = 100
-  db_username               = "dbadmin"
-  db_password               = "dbadmin11"
+  source                = "./modules/rds"
+  project_name          = "webapp"
+  vpc_id                = module.vpc.vpc_id
+  private_subnets       = module.vpc.private_subnets
+  ec2_security_group_id = module.compute.backend_ec2_sg_id
+  # bastion_security_group_id = module.rds_bastion.bastion_sg_id
+  instance_class        = "db.t3.micro"
+  allocated_storage     = 20
+  max_allocated_storage = 100
+  db_username           = "dbadmin"
+  db_password           = "dbadmin11"
 }
 
 # RDS Bastion Module for testing
 module "rds_bastion" {
   source           = "./modules/rds_bastion"
-  ami_id           = "ami-08b5b3a93ed654d19" # Amazon Linux 2 AMI
-  instance_type    = "t2.micro"
-  public_subnet_id = module.vpc.public_subnets[0]
+  ami_id           = "ami-0953476d60561c955" # Amazon Linux 2023 AMI
+  instance_type    = "t3.micro"
+  public_subnet_id = module.vpc.private_subnets[0]
   vpc_id           = module.vpc.vpc_id
 }
 
-module "efs" {
-  source                = "./modules/efs"
-  project_name          = "webapp"
-  vpc_id                = module.vpc.vpc_id
-  private_subnets       = module.vpc.private_subnets
-  ec2_security_group_id = module.compute.backend_ec2_sg_id
-  kms_key_arn           = module.security.kms_key_arn
+# module "efs" {
+#   source                = "./modules/efs"
+#   project_name          = "webapp"
+#   vpc_id                = module.vpc.vpc_id
+#   private_subnets       = module.vpc.private_subnets
+#   ec2_security_group_id = module.compute.backend_ec2_sg_id
+#   kms_key_arn           = module.security.kms_key_arn
+# }
+
+module "s3_bucket" {
+  source                 = "./modules/s3"
+  bucket_name_prefix     = var.bucket_name_prefix
+  cloudfront_oai_iam_arn = aws_cloudfront_origin_access_identity.main.iam_arn
+}
+
+module "cloudfront" {
+  source                       = "./modules/cloudfront"
+  s3_bucket_domain_name        = module.s3_bucket.s3_bucket_domain_name
+  alb_domain_name              = module.load_balancer.alb_dns_name
+  cloudfront_oai_identity_path = aws_cloudfront_origin_access_identity.main.cloudfront_access_identity_path
 }
 
 
@@ -86,68 +103,5 @@ module "security" {
   source       = "./modules/security"
   project_name = "webapp"
   vpc_id       = module.vpc.vpc_id
+  alb_arn      = module.load_balancer.alb_arn
 }
-
-# CICD MODULE
-# module "cicd" {
-#   source             = "./modules/cicd"
-#   aws_account_id     = "820242940122"
-#   aws_region         = "us-east-1"
-#   github_repo        = "RohitManna11/3tier_python_todo_app"
-#   s3_bucket          = "rohit11-terraform-backend-bucket"
-#   dynamodb_table     = "terraform-lock"
-#   frontend_s3_bucket = "react-python-todo-frontend"
-# }
-
-## BELOW RESOURCES TO BE USED FOR BACKEND TESTING ONLY
-
-# UPDATED SECURITY GROUP TO ALLOW SSM ACCESS
-# resource "aws_security_group_rule" "allow_ssm_inbound" {
-#   type              = "ingress"
-#   from_port         = 443
-#   to_port           = 443
-#   protocol          = "tcp"
-#   security_group_id = module.compute.backend_ec2_sg_id
-#   cidr_blocks       = ["0.0.0.0/0"] # Restrict to AWS IPs in production
-# }
-
-# UPDATED IAM POLICY FOR EC2 TO ALLOW SSM
-# resource "aws_iam_role_policy_attachment" "ssm_managed" {
-#   role       = module.compute.ec2_role_name
-#   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
-# }
-
-## FOLLOWING RESOURCES HAVE BEEN REMOVED FROM STATE
-
-# # S3 Bucket for Terraform State
-# resource "aws_s3_bucket" "terraform_state" {
-#   bucket = "rohit11-terraform-backend-bucket"
-# #   lifecycle {
-# #     prevent_destroy = true
-# #   }
-#   tags = {
-#     Name = "Terraform State Bucket"
-#   }
-# }
-
-# # S3 Bucket Versioning for Backend
-# resource "aws_s3_bucket_versioning" "s3_bucket_versioning" {
-#   bucket = "rohit11-terraform-backend-bucket"
-#   versioning_configuration {
-#     status = "Enabled"
-#   }
-# }
-
-# # DynamoDB Table for State Locking
-# resource "aws_dynamodb_table" "terraform_locks" {
-#   name         = "terraform-lock"
-#   billing_mode = "PAY_PER_REQUEST"
-#   hash_key     = "LockID"
-#   attribute {
-#     name = "LockID"
-#     type = "S"
-#   }
-#   tags = {
-#     Name = "Terraform Lock Table"
-#   }
-# }

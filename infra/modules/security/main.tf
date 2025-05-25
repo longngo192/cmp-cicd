@@ -1,26 +1,68 @@
 # Security Module
+# Define the IP set for bad IP addresses
+resource "aws_wafv2_ip_set" "bad_ips" {
+  name               = "bad-ips"
+  description        = "IP set containing bad IP addresses to block"
+  scope              = "REGIONAL" # Use "CLOUDFRONT" for CloudFront, "REGIONAL" for ALB/API Gateway
+  ip_address_version = "IPV4"
+  addresses = [
+    "192.0.2.1/32",  # Example bad IP (single IP)
+    "203.0.113.0/24" # Example bad IP range
+  ]
 
-# AWS Web Application Firewall (WAF) for ALB
-resource "aws_waf_web_acl" "waf_acl" {
+  tags = {
+    Name = "bad-ips"
+  }
+}
+
+# Define the Web ACL
+resource "aws_wafv2_web_acl" "web_acl" {
   name        = "${var.project_name}-waf"
-  metric_name = "${var.project_name}metrics" # Required for WAF Classic
+  description = "Web ACL to block bad IP addresses"
+  scope       = "REGIONAL" # Use "CLOUDFRONT" for CloudFront, "REGIONAL" for ALB/API Gateway
 
   default_action {
-    type = "ALLOW" # Default action: Allow all traffic unless blocked
+    allow {} # Allow requests by default unless they match a rule
   }
 
-  rules {
+  # Rule to block bad IPs
+  rule {
+    name     = "block-bad-ips"
+    priority = 1 # Lower priority numbers are evaluated first
+
     action {
-      type = "BLOCK" # Block bad requests
+      block {} # Block requests matching this rule
     }
-    priority = 1
-    rule_id  = aws_waf_rule.block_bad_requests.id
+
+    statement {
+      ip_set_reference_statement {
+        arn = aws_wafv2_ip_set.bad_ips.arn
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "block-bad-ips"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  visibility_config {
+    cloudwatch_metrics_enabled = true
+    metric_name                = "${var.project_name}metrics"
+    sampled_requests_enabled   = true
   }
 
   tags = {
-    Name = "${var.project_name}-waf"
+    Name = "example-web-acl"
   }
 }
+# Associate the Web ACL with an Application Load Balancer (ALB)
+resource "aws_wafv2_web_acl_association" "alb_association" {
+  resource_arn = var.alb_arn # Replace with your ALB ARN
+  web_acl_arn  = aws_wafv2_web_acl.web_acl.arn
+}
+
 
 # KMS Key for Encryption
 resource "aws_kms_key" "kms_key" {
@@ -31,24 +73,4 @@ resource "aws_kms_key" "kms_key" {
 resource "aws_kms_alias" "kms_alias" {
   name          = "alias/${var.project_name}-kms"
   target_key_id = aws_kms_key.kms_key.key_id
-}
-
-resource "aws_waf_rule" "block_bad_requests" {
-  name        = "${var.project_name}-block-bad-requests"
-  metric_name = "${var.project_name}metric"
-
-  predicates {
-    data_id = aws_waf_ipset.bad_ips.id
-    negated = false
-    type    = "IPMatch"
-  }
-}
-
-resource "aws_waf_ipset" "bad_ips" {
-  name = "${var.project_name}-bad-ips"
-
-  ip_set_descriptors {
-    type  = "IPV4"
-    value = "192.0.2.0/24"
-  }
 }

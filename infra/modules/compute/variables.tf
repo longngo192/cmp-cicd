@@ -15,29 +15,30 @@ variable "alb_security_group_id" {
   type = string
 }
 
+# Amazon Linux 2023 AMI with pre installed ssm agent
 variable "ami_id" {
   type    = string
-  default = "ami-05b10e08d247fb927"
+  default = "ami-0953476d60561c955"
 }
 
 variable "instance_type" {
   type    = string
-  default = "t2.micro"
+  default = "t3.micro"
 }
 
 variable "desired_capacity" {
   type    = number
-  default = 2
+  default = 1
 }
 
 variable "min_size" {
   type    = number
-  default = 2
+  default = 1
 }
 
 variable "max_size" {
   type    = number
-  default = 4
+  default = 1
 }
 
 variable "frontend_s3_bucket" {

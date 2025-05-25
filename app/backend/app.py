@@ -21,7 +21,7 @@ db = SQLAlchemy(app)
 from routes.videos_routes import videos_routes
 app.register_blueprint(videos_routes)
 
-@app.route("/", methods=["GET"])
+@app.route("/api", methods=["GET"])
 def home():
     return jsonify({"message": "KissHub v1 API is Running!"}), 200
 
