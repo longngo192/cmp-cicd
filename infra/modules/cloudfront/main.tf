@@ -19,11 +19,13 @@ resource "aws_cloudfront_distribution" "main" {
     domain_name = var.alb_domain_name
     origin_id   = "alb-backend"
 
-    custom_origin_config {
+    custom_origin_config {  
       http_port              = 80
-      https_port             = 443
-      origin_protocol_policy = "https-only"
-      origin_ssl_protocols   = ["TLSv1.2"]
+      https_port             = 443 # Required, even if not used
+      origin_protocol_policy = "http-only"
+      origin_ssl_protocols   = ["TLSv1.2"] # Required, safe default
+      origin_read_timeout    = 30 # Seconds, default
+      origin_keepalive_timeout = 5 # Seconds, default
     }
   }
 
@@ -50,6 +52,26 @@ resource "aws_cloudfront_distribution" "main" {
   ordered_cache_behavior {
     path_pattern     = "/api/*"
     allowed_methods  = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
+    cached_methods   = ["GET", "HEAD"]
+    target_origin_id = "alb-backend"
+
+    forwarded_values {
+      query_string = true
+      headers      = ["*"]
+      cookies {
+        forward = "all"
+      }
+    }
+
+    viewer_protocol_policy = "redirect-to-https"
+    min_ttl                = 0
+    default_ttl            = 0
+    max_ttl                = 0
+  }
+
+  ordered_cache_behavior {
+    path_pattern     = "/api"
+    allowed_methods  = ["GET", "HEAD"]
     cached_methods   = ["GET", "HEAD"]
     target_origin_id = "alb-backend"
 
