@@ -7,13 +7,12 @@ variable "repo_url" {
 
 variable "commit_hash" {
   type    = string
-  default = "a74ecddb20c036840cca2f5cbdfba660ace326f0" # Thay bằng commit hash thực tế
+  default = "" # Thay bằng commit hash thực tế
 }
 
-variable "database_url" {
-  type      = string
-  default   = "" # Optional: leave empty to require it at build time
-  sensitive = true
+variable "rds_endpoint_url" {
+  type    = string
+  default = "" # Thay bằng rds endpoint đã deploy của các bạn
 }
 
 # Cấu hình builder amazon-ebs để tạo AMI
@@ -39,40 +38,69 @@ build {
 
   provisioner "shell" {
     inline = [
-      # Debug user and permissions
-      "whoami",
-      "ls -ld /",
-      # Clear any held packages and reset package manager
-      "sudo yum clean all || { echo 'yum clean failed'; exit 1; }",
-      "sudo yum makecache || { echo 'yum makecache failed'; exit 1; }",
-      # Install dependencies
-      "sudo yum install -y git gcc postgresql-devel python3 python3-pip python3-devel || { echo 'yum install failed'; exit 1; }",
-      # Create /app directory and set ownership
-      "sudo mkdir -p /app || { echo 'mkdir /app failed'; exit 1; }",
-      "sudo chown ec2-user:ec2-user /app",
-      "cd /app",
-      "git clone ${var.repo_url} . || { echo 'Git clone failed'; exit 1; }",
-      "git checkout ${var.commit_hash} || { echo 'Git checkout failed'; exit 1; }",
-      # Verify and install Python dependencies
-      "ls /app/requirements.txt || { echo 'requirements.txt not found'; exit 1; }",
-      "cat /app/requirements.txt",
-      "sudo pip3 install --no-cache-dir -r /app/requirements.txt || { echo 'pip3 install failed'; exit 1; }",
-      "export PATH=$PATH:/usr/local/bin",
-      "pip3 show Flask || { echo 'Flask not installed'; exit 1; }",
-      "pip3 show python-dotenv || { echo 'python-dotenv not installed'; exit 1; }",
-      "which flask || { echo 'flask command not found'; exit 1; }",
-      # Create .env file with DATABASE_URL from variable
-      "[ -n \"${var.database_url}\" ] || { echo 'DATABASE_URL not provided'; exit 1; }",
-      "echo 'DATABASE_URL=${var.database_url}' > /app/.env",
-      "cat /app/.env",
-      # Verify app.py
-      "ls /app/app.py || { echo 'app.py not found'; exit 1; }",
-      "sudo mkdir -p /app/migrations || { echo 'mkdir /app/migrations failed'; exit 1; }",
-      "sudo chown ec2-user:ec2-user /app/migrations",
-      "export FLASK_APP=/app/app.py",
+      # Xóa cache của yum để đảm bảo kho lưu trữ sạch
+      "sudo yum clean all",
+      # Tạo lại cache cho yum với siêu dữ liệu mới
+      "sudo yum makecache",
+      # Cài đặt các gói phụ thuộc: git, gcc, postgresql-devel, python3, python3-pip, python3-devel
+      "sudo yum install -y git gcc postgresql-devel python3 python3-pip python3-devel",
+      # Tạo thư mục ~/app, -p để không báo lỗi nếu thư mục đã tồn tại
+      "sudo mkdir -p ~/app",
+      # Chuyển quyền sở hữu thư mục ~/app cho ec2-user
+      "sudo chown ec2-user:ec2-user ~/app",
+      # Di chuyển vào thư mục ~/app
+      "cd ~/app",
+      # Clone repository Git từ biến githubrepo vào thư mục hiện tại
+      "git clone ${var.repo_url} .",
+      # Chuyển sang commit hoặc nhánh được chỉ định trong biến hashcommit
+      "git checkout ${var.commit_hash}",
+      # Di chuyển vào thư mục app/backend/
+      "cd app/backend/",
+      # Hiển thị nội dung requirements.txt để kiểm tra
+      "cat requirements.txt",
+      # Cài đặt các thư viện Python từ requirements.txt, --no-cache-dir để tiết kiệm dung lượng
+      "pip3 install --no-cache-dir -r requirements.txt",
+      # Lấy endpoint của RDS instance webapp-rds-primary và lưu vào biến RDS_ENDPOINT
+      "RDS_ENDPOINT=${var.rds_endpoint_url}",
+      # Thay YOUR_RDS_ENDPOINT trong .env bằng giá trị RDS_ENDPOINT
+      "sed -i 's/YOUR_RDS_ENDPOINT/'\"$RDS_ENDPOINT\"'/g' .env",
+      # Hiển thị nội dung .env để kiểm tra
+      "cat .env",
+      # Kiểm tra sự tồn tại của app.py
+      "ls app.py",
+      # Tạo thư mục migrations để lưu trữ migration của Flask-Migrate
+      "sudo mkdir -p migrations",
+      # Chuyển quyền sở hữu thư mục migrations cho ec2-user
+      "sudo chown ec2-user:ec2-user migrations",
+      # Thiết lập biến môi trường FLASK_APP để chỉ định app.py
+      "export FLASK_APP=app.py",
+      # Thiết lập môi trường Flask là production
       "export FLASK_ENV=production",
-      "flask db init || { echo 'flask db init failed'; exit 1; }",
-      "flask db migrate || { echo 'flask db migrate failed'; exit 1; }"
+      # Chạy script db_init.py để khởi tạo cơ sở dữ liệu (script tùy chỉnh)
+      "python3 db_init.py",
+      # Khởi tạo Flask-Migrate, tạo thư mục migrations/
+      "flask db init",
+      # Tạo migration mới dựa trên models của Flask
+      "flask db migrate"
+
+      # Tạo file systemd service cho Gunicorn
+      "sudo bash -c 'cat > /etc/systemd/system/flaskapp.service' << 'EOF'",
+      "[Unit]",
+      "Description=Flask App with Gunicorn",
+      "After=network.target",
+      "",
+      "[Service]",
+      "User=ec2-user",
+      "WorkingDirectory=/home/ec2-user/app/app/backend",
+      "ExecStart=/home/ec2-user/.local/bin/gunicorn -w 4 -b 0.0.0.0:5000 app:app",
+      "Restart=always",
+      "Environment=FLASK_ENV=production",
+      "",
+      "[Install]",
+      "WantedBy=multi-user.target",
+      "EOF",
+      # Kích hoạt systemd service để chạy khi khởi động
+      "sudo systemctl enable flaskapp.service"
     ]
   }
 }
