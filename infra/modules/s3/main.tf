@@ -5,6 +5,7 @@ locals {
 
 resource "aws_s3_bucket" "static_site" {
   bucket = local.bucket-name
+  force_destroy = true
   tags = {
     Name = local.bucket-name
   }
