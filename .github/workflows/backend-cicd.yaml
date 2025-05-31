@@ -91,6 +91,14 @@ jobs:
           # Kiểm tra phiên bản Packer
           packer --version
 
+      # Cài đặt plugin AWS EBS cho Packer
+      - name: Install Packer AWS Plugin
+        run: |
+          # Cài đặt plugin amazon từ HashiCorp
+          packer plugins install github.com/hashicorp/amazon
+          # Kiểm tra danh sách plugin đã cài đặt
+          packer plugins installed
+
       # Lấy commit hash của lần push mới nhất
       - name: Get Commit Hash
         id: commit
@@ -153,8 +161,8 @@ jobs:
           # Khởi tạo Terraform trong thư mục infra
           cd infra
           terraform init
-          # Import Launch Template version mới nhất vào Terraform state
-          terraform import aws_launch_template.webapp_launch_template ${{ env.LAUNCH_TEMPLATE_ID }}
+          # Import Launch Template vào Terraform state
+          terraform import aws_launch_template.webapp_launch_template "${{ env.LAUNCH_TEMPLATE_ID }}"
         working-directory: .
 
       # Làm mới Auto Scaling Group
