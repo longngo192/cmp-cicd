@@ -1,0 +1,6 @@
+name: Webapp frontend auto build and deploy
+
+on:
+  push:
+    paths:
+      - 'app/frontend/**'
