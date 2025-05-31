@@ -65,9 +65,21 @@ create_or_update_secret() {
   local key_id=$3
   local public_key=$4
 
+
+
   # Mã hóa secret
   encrypted_value=$(encrypt_secret "$secret_value" "$public_key")
 
+  echo "Uploading $secret_name to GitHub Secrets..."
+  echo "value ${secret_value}"
+  echo "public key_id ${key_id}"
+  echo "public key ${public_key}"
+  echo "encrypted_value ${encrypted_value}"
+  echo "curl -s -X PUT \
+       -H "Authorization: token $GITHUB_TOKEN" \
+       -H "Accept: application/vnd.github.v3+json" \
+       "https://api.github.com/repos/$REPO/actions/secrets/$secret_name" \
+       -d "{\"encrypted_value\":\"$encrypted_value\",\"key_id\":\"$key_id\"}""
   # Gửi yêu cầu API để tạo/cập nhật secret
   curl -s -X PUT \
        -H "Authorization: token $GITHUB_TOKEN" \
@@ -99,6 +111,7 @@ AWS_ROLE_ARN="$ROLE_ARN"
 for secret in "${SECRETS[@]}"; do
   echo "Uploading $secret to GitHub Secrets..."
   echo "value ${!secret}"
+  echo "public key ${public_key}"
   create_or_update_secret "$secret" "${!secret}" "$key_id" "$public_key"
   if [ $? -eq 0 ]; then
     echo "Successfully uploaded $secret."

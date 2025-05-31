@@ -64,15 +64,18 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: terraform-plan
-          path: ./terraform/tfplan
+          path: ./infra/tfplan
           retention-days: 1
 
       # Manual Approval
       - name: Wait for Approval
-        uses: actions/attest@v1
+        uses: trstringer/manual-approval@v1
         with:
-          subject: "Terraform Plan Approval"
-          predicate-type: "manual-approval"
+          approvers: ${{ github.repository_owner }} # Thay bằng username GitHub của người phê duyệt hoặc để yên để luôn gắn chủ của repo làm người 
+          minimum-approvals: 1
+          issue-title: "Approve Terraform Plan"
+          issue-body: "Please review and approve the Terraform plan to proceed with deployment."
+
 
       # Download plan file
       - name: Download Terraform Plan
