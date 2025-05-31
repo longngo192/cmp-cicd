@@ -8,7 +8,7 @@ export const getVideo = async (id) => {
     return response.json();
 };
 
-// Fetch all tasks
+// Fetch all tasks v1
 export const getTasks = async () => {
     const response = await fetch(`${API_URL}/tasks`);
     return response.json();
