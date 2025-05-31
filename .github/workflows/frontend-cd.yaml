@@ -40,9 +40,9 @@ jobs:
       # Lấy CloudFront domain và cập nhật file .env
       - name: Update .env with CloudFront Domain
         run: |
-          # Lấy CloudFront distribution ID dựa trên tag Name=cloudfront-distribution
+          # Lấy CloudFront distribution ID có Origin với OriginId=s3-static-site
           DISTRIBUTION_ID=$(aws cloudfront list-distributions \
-            --query "DistributionList.Items[?Tags.Items[?Key=='Name' && Value=='cloudfront-distribution']].Id" \
+            --query "DistributionList.Items[?Origins.Items[?Id=='s3-static-site']].Id" \
             --output text)
           
           # Kiểm tra nếu không tìm thấy distribution
