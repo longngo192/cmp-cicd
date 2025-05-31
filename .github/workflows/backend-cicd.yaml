@@ -68,9 +68,9 @@ jobs:
             --query 'InstanceProfiles[?InstanceProfileName==`webapp-ec2-profile`].InstanceProfileName' \
             --output text)" >> $GITHUB_ENV
 
-          # Lấy ID của Launch Template dựa trên tag Name=webapp-launch-template
+          # Lấy ID của Launch Template dựa trên tên bắt đầu bằng webapp-backend-
           echo "LAUNCH_TEMPLATE_ID=$(aws ec2 describe-launch-templates \
-            --filters "Name=tag:Name,Values=webapp-launch-template" \
+            --filters "Name=launch-template-name,Values=webapp-backend-*" \
             --query "LaunchTemplates[0].LaunchTemplateId" \
             --output text)" >> $GITHUB_ENV
 
