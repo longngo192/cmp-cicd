@@ -137,7 +137,7 @@ jobs:
           # Lấy phiên bản mới nhất của Launch Template
           LATEST_VERSION=$(aws ec2 describe-launch-template-versions \
             --region ${{ env.AWS_REGION }} \
-            --launch-template-id ${{ env.LAUNCH_TEMPLATE_ID } \
+            --launch-template-id ${{ env.LAUNCH_TEMPLATE_ID }} \
             --query 'sort_by(LaunchTemplateVersions, &VersionNumber)[-1].VersionNumber' \
             --output text)
           echo "LATEST_VERSION=$LATEST_VERSION" >> $GITHUB_ENV
