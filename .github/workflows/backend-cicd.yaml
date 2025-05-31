@@ -1,0 +1,167 @@
+name: Webapp backend auto build
+
+on:
+  push:
+    paths:
+      - 'app/backend/**' # Kích hoạt workflow khi có thay đổi trong thư mục app/backend
+
+permissions:
+  id-token: write # Quyền ghi token để xác thực với AWS
+  contents: read # Quyền đọc nội dung repository
+  pull-requests: write # Quyền ghi vào pull requests
+  issues: write # Quyền ghi vào issues
+  repository-projects: write # Quyền ghi vào projects của repository
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest # Chạy job trên máy Ubuntu mới nhất
+    env:
+      AWS_REGION: us-east-1 # Vùng AWS được sử dụng
+      PACKER_VERSION: 1.10.0 # Phiên bản Packer để cài đặt
+      TERRAFORM_VERSION: 1.9.8 # Phiên bản Terraform để cài đặt
+      REPO_URL: https://github.com/longngo192/cmp-cicd.git # URL của repository Git
+
+    steps:
+      # Lấy mã nguồn từ repository
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Lấy toàn bộ lịch sử commit để đảm bảo có commit hash chính xác
+
+      # Cấu hình thông tin xác thực AWS
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }} # Vai trò AWS để xác thực
+          aws-region: ${{ env.AWS_REGION }} # Vùng AWS được chỉ định
+
+      # Lấy thông tin các tài nguyên AWS bằng AWS CLI
+      - name: Retrieve AWS Resource IDs
+        run: |
+          # Lấy ID của VPC dựa trên tag Name=webapp-vpc
+          echo "VPC_ID=$(aws ec2 describe-vpcs \
+            --filters "Name=tag:Name,Values=webapp-vpc" \
+            --query "Vpcs[0].VpcId" \
+            --output text)" >> $GITHUB_ENV
+
+          # Lấy ID của Subnet riêng dựa trên tag Name=webapp-private-subnet-1
+          echo "SUBNET_ID=$(aws ec2 describe-subnets \
+            --filters "Name=tag:Name,Values=webapp-private-subnet-1" \
+            --query "Subnets[0].SubnetId" \
+            --output text)" >> $GITHUB_ENV
+
+          # Lấy ID của Security Group dựa trên tag Name=webapp-ec2-sg
+          echo "SECURITY_GROUP_ID=$(aws ec2 describe-security-groups \
+            --filters "Name=tag:Name,Values=webapp-ec2-sg" \
+            --query "SecurityGroups[0].GroupId" \
+            --output text)" >> $GITHUB_ENV
+
+          # Lấy địa chỉ endpoint của RDS instance với identifier webapp-rds-primary
+          echo "RDS_ENDPOINT_URL=$(aws rds describe-db-instances \
+            --db-instance-identifier webapp-rds-primary \
+            --region ${{ env.AWS_REGION }} \
+            --query 'DBInstances[0].Endpoint.Address' \
+            --output text)" >> $GITHUB_ENV
+
+          # Lấy tên IAM Instance Profile với tên webapp-ec2-profile
+          echo "IAM_INSTANCE_PROFILE=$(aws iam list-instance-profiles \
+            --query 'InstanceProfiles[?InstanceProfileName==`webapp-ec2-profile`].InstanceProfileName' \
+            --output text)" >> $GITHUB_ENV
+
+          # Lấy ID của Launch Template dựa trên tag Name=webapp-launch-template
+          echo "LAUNCH_TEMPLATE_ID=$(aws ec2 describe-launch-templates \
+            --filters "Name=tag:Name,Values=webapp-launch-template" \
+            --query "LaunchTemplates[0].LaunchTemplateId" \
+            --output text)" >> $GITHUB_ENV
+
+          # Lấy tên Auto Scaling Group dựa trên tag Name=webapp-asg
+          echo "ASG_NAME=$(aws autoscaling describe-auto-scaling-groups \
+            --query 'AutoScalingGroups[?Tags[?Key==`Name` && Value==`webapp-asg`]].AutoScalingGroupName' \
+            --output text)" >> $GITHUB_ENV
+
+      # Cài đặt Packer
+      - name: Install Packer
+        run: |
+          # Tải file nén Packer từ HashiCorp
+          wget https://releases.hashicorp.com/packer/${{ env.PACKER_VERSION }}/packer_${{ env.PACKER_VERSION }}_linux_amd64.zip
+          # Giải nén file
+          unzip packer_${{ env.PACKER_VERSION }}_linux_amd64.zip
+          # Di chuyển Packer vào thư mục hệ thống
+          sudo mv packer /usr/local/bin/
+          # Kiểm tra phiên bản Packer
+          packer --version
+
+      # Lấy commit hash của lần push mới nhất
+      - name: Get Commit Hash
+        id: commit
+        run: echo "COMMIT_HASH=$(git rev-parse HEAD)" >> $GITHUB_ENV
+
+      # Chạy Packer để xây dựng AMI
+      - name: Run Packer Build
+        run: |
+          # Khởi tạo cấu hình Packer
+          packer init app/backend/packer.pkr.hcl
+          # Chạy lệnh build Packer với các biến môi trường
+          packer build \
+            -var "repo_url=${{ env.REPO_URL }}" \
+            -var "commit_hash=${{ env.COMMIT_HASH }}" \
+            -var "rds_endpoint_url=${{ env.RDS_ENDPOINT_URL }}" \
+            -var "vpc_id=${{ env.VPC_ID }}" \
+            -var "subnet_id=${{ env.SUBNET_ID }}" \
+            -var "security_group_id=${{ env.SECURITY_GROUP_ID }}" \
+            -var "iam_instance_profile=${{ env.IAM_INSTANCE_PROFILE }}" \
+            app/backend/packer.pkr.hcl
+        working-directory: .
+
+      # Lấy ID của AMI vừa tạo
+      - name: Extract AMI ID
+        id: ami
+        run: |
+          # Tìm AMI mới nhất có tên bắt đầu bằng backend-ami-
+          AMI_ID=$(aws ec2 describe-images \
+            --region ${{ env.AWS_REGION }} \
+            --filters "Name=name,Values=backend-ami-*" \
+            --query 'sort_by(Images, &CreationDate)[-1].ImageId' \
+            --output text)
+          echo "AMI_ID=$AMI_ID" >> $GITHUB_ENV
+
+      # Cập nhật Launch Template với AMI mới
+      - name: Update Launch Template
+        run: |
+          # Tạo phiên bản mới cho Launch Template với AMI vừa tạo
+          aws ec2 create-launch-template-version \
+            --region ${{ env.AWS_REGION }} \
+            --launch-template-id ${{ env.LAUNCH_TEMPLATE_ID }} \
+            --source-version \$Latest \
+            --launch-template-data "{\"ImageId\":\"${{ env.AMI_ID }}\"}"
+          # Lấy phiên bản mới nhất của Launch Template
+          LATEST_VERSION=$(aws ec2 describe-launch-template-versions \
+            --region ${{ env.AWS_REGION }} \
+            --launch-template-id ${{ env.LAUNCH_TEMPLATE_ID } \
+            --query 'sort_by(LaunchTemplateVersions, &VersionNumber)[-1].VersionNumber' \
+            --output text)
+          echo "LATEST_VERSION=$LATEST_VERSION" >> $GITHUB_ENV
+
+      # Cài đặt và import Launch Template vào Terraform
+      - name: Import Launch Template to Terraform
+        run: |
+          # Tải và cài đặt Terraform
+          wget https://releases.hashicorp.com/terraform/${{ env.TERRAFORM_VERSION }}/terraform_${{ env.TERRAFORM_VERSION }}_linux_amd64.zip
+          unzip terraform_${{ env.TERRAFORM_VERSION }}_linux_amd64.zip
+          sudo mv terraform /usr/local/bin/
+          terraform --version
+          # Khởi tạo Terraform trong thư mục infra
+          cd infra
+          terraform init
+          # Import Launch Template version mới nhất vào Terraform state
+          terraform import aws_launch_template.webapp_launch_template ${{ env.LAUNCH_TEMPLATE_ID }}
+        working-directory: .
+
+      # Làm mới Auto Scaling Group
+      - name: Refresh Auto Scaling Group
+        run: |
+          # Bắt đầu quá trình làm mới instance trong ASG với cấu hình bảo vệ sức khỏe
+          aws autoscaling start-instance-refresh \
+            --region ${{ env.AWS_REGION }} \
+            --auto-scaling-group-name ${{ env.ASG_NAME }} \
+            --preferences '{"MinHealthyPercentage": 50, "InstanceWarmup": 300}'

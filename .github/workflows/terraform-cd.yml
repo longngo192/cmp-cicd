@@ -74,7 +74,7 @@ jobs:
         uses: trstringer/manual-approval@v1
         with:
           secret: ${{ github.TOKEN }}
-          approvers: ${{ github.repository_owner }} # Thay bằng username GitHub của người phê duyệt hoặc để yên để luôn gắn chủ của repo làm người 
+          approvers: ${{ github.repository_owner }} # Thay bằng username GitHub của người phê duyệt hoặc để yên để luôn gắn chủ của repo làm người phê duyệt
           minimum-approvals: 1
           issue-title: "Approve Terraform Plan"
           issue-body: "Please review and approve the Terraform plan to proceed with deployment."
