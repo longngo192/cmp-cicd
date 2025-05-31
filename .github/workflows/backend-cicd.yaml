@@ -167,6 +167,53 @@ jobs:
           terraform import module.compute.aws_launch_template.backend_lt "${{ env.LAUNCH_TEMPLATE_ID }}"
         working-directory: .
 
+      # Chấm dứt các EC2 instance thuộc launch template cũ
+      - name: Terminate Old EC2 Instances
+        run: |
+          # Lấy phiên bản launch template hiện tại của ASG (trước khi cập nhật)
+          OLD_LAUNCH_TEMPLATE_VERSION=$(aws autoscaling describe-auto-scaling-groups \
+            --auto-scaling-group-names ${{ env.ASG_NAME }} \
+            --region ${{ env.AWS_REGION }} \
+            --query 'AutoScalingGroups[0].LaunchTemplate.Version' \
+            --output text)
+
+          # Kiểm tra nếu không tìm thấy phiên bản launch template
+          if [ -z "$OLD_LAUNCH_TEMPLATE_VERSION" ] || [ "$OLD_LAUNCH_TEMPLATE_VERSION" = "\$Latest" ]; then
+            echo "Không tìm thấy phiên bản launch template cụ thể hoặc đang dùng \$Latest. Bỏ qua chấm dứt instances."
+            exit 0
+          fi
+
+          # Lấy danh sách instance IDs sử dụng launch template cũ
+          INSTANCE_IDS=$(aws ec2 describe-instances \
+            --region ${{ env.AWS_REGION }} \
+            --filters "Name=launch-template-id,Values=${{ env.LAUNCH_TEMPLATE_ID }}" \
+                      "Name=launch-template-version,Values=$OLD_LAUNCH_TEMPLATE_VERSION" \
+                      "Name=instance-state-name,Values=running,pending" \
+            --query 'Reservations[*].Instances[*].InstanceId' \
+            --output text)
+
+          # Kiểm tra nếu không có instance nào
+          if [ -z "$INSTANCE_IDS" ]; then
+            echo "Không tìm thấy EC2 instances nào sử dụng launch template ${{ env.LAUNCH_TEMPLATE_ID }} phiên bản $OLD_LAUNCH_TEMPLATE_VERSION."
+            exit 0
+          fi
+
+          # Chấm dứt các instances
+          echo "Chấm dứt các instances: $INSTANCE_IDS"
+          aws ec2 terminate-instances \
+            --region ${{ env.AWS_REGION }} \
+            --instance-ids $INSTANCE_IDS
+
+          # Chờ cho đến khi tất cả instances được chấm dứt
+          for INSTANCE_ID in $INSTANCE_IDS; do
+            echo "Đang chờ instance $INSTANCE_ID chấm dứt..."
+            aws ec2 wait instance-terminated \
+              --region ${{ env.AWS_REGION }} \
+              --instance-ids $INSTANCE_ID
+          done
+          echo "Tất cả instances đã được chấm dứt."
+
+
       # Làm mới Auto Scaling Group
       - name: Refresh Auto Scaling Group
         run: |
