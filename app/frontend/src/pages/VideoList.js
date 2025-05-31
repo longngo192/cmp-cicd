@@ -30,7 +30,7 @@ const VideoList = () => {
 
   return (
     <div>
-      <h1>v1</h1>  
+      <h1>v2</h1>  
       <Header />
       <div className="video-list-container">
         <h1>Video Mới Đăng</h1>
