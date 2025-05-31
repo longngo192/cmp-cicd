@@ -19,14 +19,17 @@ jobs:
 
       # Debug: Check secrets availability
       - name: Debug Secrets
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
         run: |
-          echo "AWS_REGION is set to: ${{ secrets.AWS_REGION }}"
-          echo "AWS_ROLE_ARN is set to: ${{ secrets.AWS_ROLE_ARN }}"
-          if [ -z "${{ secrets.AWS_REGION }}" ]; then
+          echo "AWS_REGION is set to: $AWS_REGION"
+          echo "AWS_ROLE_ARN is set to: $AWS_ROLE_ARN"
+          if [ -z "$AWS_REGION" ]; then
             echo "Error: AWS_REGION secret is not set or empty"
             exit 1
           fi
-          if [ -z "${{ secrets.AWS_ROLE_ARN }}" ]; then
+          if [ -z "$AWS_ROLE_ARN" ]; then
             echo "Error: AWS_ROLE_ARN secret is not set or empty"
             exit 1
           fi
