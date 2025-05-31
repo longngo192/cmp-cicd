@@ -18,6 +18,20 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Debug: Check secrets availability
+      - name: Debug Secrets
+        run: |
+          echo "AWS_REGION is set to: ${{ secrets.AWS_REGION }}"
+          echo "AWS_ROLE_ARN is set to: ${{ secrets.AWS_ROLE_ARN }}"
+          if [ -z "${{ secrets.AWS_REGION }}" ]; then
+            echo "Error: AWS_REGION secret is not set or empty"
+            exit 1
+          fi
+          if [ -z "${{ secrets.AWS_ROLE_ARN }}" ]; then
+            echo "Error: AWS_ROLE_ARN secret is not set or empty"
+            exit 1
+          fi
+
       # Set up AWS CLI
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
