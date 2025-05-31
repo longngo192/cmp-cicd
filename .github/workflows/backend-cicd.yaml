@@ -74,9 +74,9 @@ jobs:
             --query "LaunchTemplates[0].LaunchTemplateId" \
             --output text)" >> $GITHUB_ENV
 
-          # Lấy tên Auto Scaling Group dựa trên tag Name=webapp-asg
+          # Lấy tên Auto Scaling Group dựa trên tên bắt đầu bằng terraform-
           echo "ASG_NAME=$(aws autoscaling describe-auto-scaling-groups \
-            --query 'AutoScalingGroups[?Tags[?Key==`Name` && Value==`webapp-asg`]].AutoScalingGroupName' \
+            --query 'AutoScalingGroups[?starts_with(AutoScalingGroupName, `terraform-`)].AutoScalingGroupName | [0]' \
             --output text)" >> $GITHUB_ENV
 
       # Cài đặt Packer
@@ -161,8 +161,10 @@ jobs:
           # Khởi tạo Terraform trong thư mục infra
           cd infra
           terraform init
-          # Import Launch Template vào Terraform state
-          terraform import aws_launch_template.webapp_launch_template "${{ env.LAUNCH_TEMPLATE_ID }}"
+          # Xóa resource launch template hiện tại khỏi state (nếu tồn tại)
+          terraform state rm module.compute.aws_launch_template.backend_lt || true
+          # Import Launch Template mới vào Terraform state
+          terraform import module.compute.aws_launch_template.backend_lt "${{ env.LAUNCH_TEMPLATE_ID }}"
         working-directory: .
 
       # Làm mới Auto Scaling Group
