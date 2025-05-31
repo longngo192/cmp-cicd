@@ -110,7 +110,7 @@ jobs:
             -var "subnet_id=${{ env.SUBNET_ID }}" \
             -var "security_group_id=${{ env.SECURITY_GROUP_ID }}" \
             -var "iam_instance_profile=${{ env.IAM_INSTANCE_PROFILE }}" \
-            app/backend/packer.pkr.hcl
+            infra/packer/packer.pkr.hcl
         working-directory: .
 
       # Lấy ID của AMI vừa tạo
