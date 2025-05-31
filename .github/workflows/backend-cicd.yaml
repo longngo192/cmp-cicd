@@ -100,7 +100,7 @@ jobs:
       - name: Run Packer Build
         run: |
           # Khởi tạo cấu hình Packer
-          packer init app/backend/packer.pkr.hcl
+          packer init infra/packer/packer.pkr.hcl
           # Chạy lệnh build Packer với các biến môi trường
           packer build \
             -var "repo_url=${{ env.REPO_URL }}" \
