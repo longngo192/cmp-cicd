@@ -27,7 +27,7 @@ app.register_blueprint(videos_routes)
 
 @app.route("/api", methods=["GET"])
 def home():
-    return jsonify({"message": "KissHub v1 API is Running!"}), 200
+    return jsonify({"message": "KissHub v2 API is Running!"}), 200
 
 def init_video_data():
     from models.video import Video
