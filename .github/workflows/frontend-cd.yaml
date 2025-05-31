@@ -1,6 +1,101 @@
-name: Webapp frontend auto build and deploy
+name: Frontend Build and Deploy to S3
 
 on:
   push:
     paths:
-      - 'app/frontend/**'
+      - 'app/frontend/**' # Kích hoạt workflow khi có thay đổi trong thư mục app/frontend
+
+permissions:
+  id-token: write # Quyền ghi token để xác thực với AWS
+  contents: read # Quyền đọc nội dung repository
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest # Chạy job trên máy Ubuntu mới nhất
+    env:
+      AWS_REGION: us-east-1 # Vùng AWS được sử dụng
+      NODE_VERSION: 18 # Phiên bản Node.js để cài đặt
+      S3_PREFIX: lab1-cmp-ngosylong-com # Prefix cho S3 bucket
+
+    steps:
+      # Lấy mã nguồn từ repository
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Lấy toàn bộ lịch sử commit
+
+      # Cấu hình thông tin xác thực AWS
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }} # Vai trò AWS để xác thực
+          aws-region: ${{ env.AWS_REGION }} # Vùng AWS được chỉ định
+
+      # Cài đặt Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }} # Sử dụng phiên bản Node.js được chỉ định
+
+      # Lấy CloudFront domain và cập nhật file .env
+      - name: Update .env with CloudFront Domain
+        run: |
+          # Lấy CloudFront distribution ID dựa trên tag Name=cloudfront-distribution
+          DISTRIBUTION_ID=$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?Tags.Items[?Key=='Name' && Value=='cloudfront-distribution']].Id" \
+            --output text)
+          
+          # Kiểm tra nếu không tìm thấy distribution
+          if [ -z "$DISTRIBUTION_ID" ]; then
+            echo "Không tìm thấy CloudFront distribution với tag Name=cloudfront-distribution"
+            exit 1
+          fi
+
+          # Lấy domain của CloudFront distribution
+          CLOUDFRONT_DOMAIN=$(aws cloudfront get-distribution \
+            --id $DISTRIBUTION_ID \
+            --query "Distribution.DomainName" \
+            --output text)
+          
+          # Kiểm tra nếu không lấy được domain
+          if [ -z "$CLOUDFRONT_DOMAIN" ]; then
+            echo "Không lấy được domain của CloudFront distribution"
+            exit 1
+          fi
+
+          # Di chuyển vào thư mục app/frontend
+          cd app/frontend
+
+          # Thay thế REACT_APP_API_URL và FLASK_ENV trong file .env
+          sed -i "s|REACT_APP_API_URL=.*|REACT_APP_API_URL=https://$CLOUDFRONT_DOMAIN/api|" .env
+          sed -i "s|FLASK_ENV=.*|FLASK_ENV=production|" .env
+
+          # Hiển thị nội dung file .env để kiểm tra
+          cat .env
+
+      # Cài đặt dependencies và build frontend
+      - name: Install Dependencies and Build
+        run: |
+          cd app/frontend
+          npm install # Cài đặt các package npm
+          npm run build # Chạy lệnh build để tạo thư mục build
+
+      # Tìm S3 bucket và upload file build
+      - name: Upload to S3 Bucket
+        run: |
+          # Tìm S3 bucket có tên bắt đầu bằng lab1-cmp-ngosylong-com
+          S3_BUCKET=$(aws s3api list-buckets \
+            --query "Buckets[?starts_with(Name, 'lab1-cmp-ngosylong-com')].Name" \
+            --output text)
+          
+          # Kiểm tra nếu không tìm thấy bucket
+          if [ -z "$S3_BUCKET" ]; then
+            echo "Không tìm thấy S3 bucket với tên bắt đầu bằng lab1-cmp-ngosylong-com"
+            exit 1
+          fi
+
+          # Upload thư mục build vào S3 bucket với prefix
+          aws s3 sync app/frontend/build s3://$S3_BUCKET/${{ env.S3_PREFIX }}/ \
+            --delete \
+            --cache-control 'public, max-age=31104000' \
+            --acl public-read
